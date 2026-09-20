@@ -1,6 +1,6 @@
 ﻿# TTC-STGCNN: Time-to-Collision Aware Social Spatio-Temporal Graph Convolutional Network for Pedestrian Trajectory Prediction
 
-**TTC-STGCNN** is a safety-aware pedestrian trajectory prediction framework that extends [Social-STGCNN](https://github.com/abduallahmohamed/Social-STGCNN) (Mohamed et al., CVPR 2020) by incorporating a physics-inspired **Time-to-Collision (TTC)** interaction energy into both the adjacency matrix construction and the training loss. The key motivation is that standard trajectory predictors optimized purely for displacement accuracy tend to generate socially unsafe predictions â€” trajectories where pedestrians pass unrealistically close to one another or even collide. This work introduces a lightweight, mathematically grounded modification that significantly reduces predicted collision rates while maintaining competitive accuracy on the ETH/UCY benchmark.
+**TTC-STGCNN** is a safety-aware pedestrian trajectory prediction framework that extends [Social-STGCNN](https://github.com/abduallahmohamed/Social-STGCNN) (Mohamed et al., CVPR 2020) by incorporating a physics-inspired **Time-to-Collision (TTC)** interaction energy into both the adjacency matrix construction and the training loss. The key motivation is that standard trajectory predictors optimized purely for displacement accuracy tend to generate socially unsafe predictions :” trajectories where pedestrians pass unrealistically close to one another or even collide. This work introduces a lightweight, mathematically grounded modification that significantly reduces predicted collision rates while maintaining competitive accuracy on the ETH/UCY benchmark.
 
 ---
 
@@ -190,9 +190,9 @@ The evaluation samples $k = 20$ trajectory hypotheses per scene and reports best
 
 | Metric | Definition |
 |--------|------------|
-| **ADE** | Average Displacement Error â€” mean L2 distance over all predicted steps |
-| **FDE** | Final Displacement Error â€” L2 distance at the final predicted step |
-| **COL-I** | Predicted-predicted collision rate â€” fraction of scenes with any predicted pair closer than $2r = 0.4$ m |
+| **ADE** | Average Displacement Error :” mean L2 distance over all predicted steps |
+| **FDE** | Final Displacement Error :” L2 distance at the final predicted step |
+| **COL-I** | Predicted-predicted collision rate :” fraction of scenes with any predicted pair closer than $2r = 0.4$ m |
 | **COL-I-check** | Per-pedestrian COL-I, excluding co-moving groups |
 | **COL-II-rate** | Fraction of predicted-groundtruth timestep pairs below collision threshold |
 | **COL-II-check** | Per-pedestrian COL-II excluding co-moving groups |
@@ -206,7 +206,7 @@ All metrics are reported under the leave-one-out protocol (k=20 samples, best-of
 
 ### Quantitative Comparison
 
-**TTC-STGCNN (Ours) â€” $\lambda=0,\ \beta=1.0$:**
+**TTC-STGCNN (Ours) :” $\lambda=0,\ \beta=1.0$:**
 
 | Dataset | ADE (m) | FDE (m) | COL-I-check | COL-II-rate | COL-II-check | AE |
 |---------|---------|---------|-------------|-------------|--------------|-----|
@@ -228,7 +228,7 @@ All metrics are reported under the leave-one-out protocol (k=20 samples, best-of
 | Zara2   | 0.30    | 0.48    |
 | **Avg** | **0.44**| **0.75**|
 
-The TTC-STGCNN achieves competitive ADE/FDE against the Social-STGCNN baseline while introducing explicit safety-awareness through the collision-regularized loss and TTC-weighted graph. The marginal difference in average ADE/FDE (0.44/0.75 vs. 0.44/0.75) confirms that the TTC regularization does not degrade trajectory accuracy â€” it imposes safety constraints at no cost to predictive performance.
+The TTC-STGCNN achieves competitive ADE/FDE against the Social-STGCNN baseline while introducing explicit safety-awareness through the collision-regularized loss and TTC-weighted graph. The marginal difference in average ADE/FDE (0.44/0.75 vs. 0.44/0.75) confirms that the TTC regularization does not degrade trajectory accuracy :” it imposes safety constraints at no cost to predictive performance.
 
 ---
 
@@ -236,14 +236,14 @@ The TTC-STGCNN achieves competitive ADE/FDE against the Social-STGCNN baseline w
 
 The figure below shows training and validation loss curves for the **univ** dataset, comparing the original Social-STGCNN adjacency (**A\_goc**) against the TTC-weighted adjacency (**A\_moi**). Four subplots are displayed:
 
-1. **A\_goc: Train vs Val** â€” The original adjacency exhibits high variance in the validation loss (orange), indicating sensitivity to scene density. The wide oscillation range persists throughout training, suggesting the model struggles to regularize interaction structure in crowded scenarios.
-2. **A\_moi: Train vs Val** â€” The TTC-weighted adjacency (green/red) converges more smoothly, with the validation loss following the training curve closely throughout training. The reduced gap between train and val loss indicates better generalization: the TTC energy provides a physically meaningful interaction prior that helps the model avoid overfitting to scene-specific co-occurrence patterns.
-3. **Train Loss: A\_moi vs A\_goc** â€” Both models converge to similar final training loss magnitudes (note the dual y-axes reflecting different loss scales). However, the trajectory of A\_moi (green solid) descends more steadily, while A\_goc (blue dashed) shows sharper discontinuities, consistent with the less-structured inverse-distance adjacency receiving noisy gradients in dense scenes.
-4. **Val Loss: A\_moi vs A\_goc** â€” After the learning rate decay at epoch 150, the TTC-weighted model (red solid) stabilizes at a lower validation loss level, while the original model (orange dashed) continues to exhibit large oscillations. This confirms that the TTC energy regularizer acts as an implicit noise-reducing prior on the interaction structure, smoothing the optimization landscape on validation data.
+1. **A\_goc: Train vs Val** :” The original adjacency exhibits high variance in the validation loss (orange), indicating sensitivity to scene density. The wide oscillation range persists throughout training, suggesting the model struggles to regularize interaction structure in crowded scenarios.
+2. **A\_moi: Train vs Val** :” The TTC-weighted adjacency (green/red) converges more smoothly, with the validation loss following the training curve closely throughout training. The reduced gap between train and val loss indicates better generalization: the TTC energy provides a physically meaningful interaction prior that helps the model avoid overfitting to scene-specific co-occurrence patterns.
+3. **Train Loss: A\_moi vs A\_goc** :” Both models converge to similar final training loss magnitudes (note the dual y-axes reflecting different loss scales). However, the trajectory of A\_moi (green solid) descends more steadily, while A\_goc (blue dashed) shows sharper discontinuities, consistent with the less-structured inverse-distance adjacency receiving noisy gradients in dense scenes.
+4. **Val Loss: A\_moi vs A\_goc** :” After the learning rate decay at epoch 150, the TTC-weighted model (red solid) stabilizes at a lower validation loss level, while the original model (orange dashed) continues to exhibit large oscillations. This confirms that the TTC energy regularizer acts as an implicit noise-reducing prior on the interaction structure, smoothing the optimization landscape on validation data.
 
 The visible step at epoch 150 in both curves corresponds to the SGD learning rate decay (gamma = 0.2), which sharpens convergence in both models.
 
-![Training and validation loss history on the univ dataset â€” TTC-STGCNN (A_moi) vs. Social-STGCNN (A_goc)](./assets/history_compare_4plots_univ.png)
+![Training and validation loss history on the univ dataset :” TTC-STGCNN (A_moi) vs. Social-STGCNN (A_goc)](./assets/history_compare_4plots_univ.png)
 
 ---
 
@@ -257,9 +257,9 @@ The figure below shows this analysis for the **univ** dataset, which contains th
 
 **Observations:**
 
-- **A\_goc / Social-STGCNN (blue solid):** The original model concentrates nearly all of its minimum predicted distances at or below 0.02 m â€” effectively at zero â€” meaning that in virtually every hard-case scene, at least one pair of pedestrians is predicted to be physically overlapping. The CDF reaches 1.0 before 0.05 m, confirming a systematic failure mode under high crowd density. The original distance-based adjacency matrix encodes proximity but not urgency, and the NLL loss provides no incentive for the model to avoid physically impossible configurations.
+- **A\_goc / Social-STGCNN (blue solid):** The original model concentrates nearly all of its minimum predicted distances at or below 0.02 m :” effectively at zero :” meaning that in virtually every hard-case scene, at least one pair of pedestrians is predicted to be physically overlapping. The CDF reaches 1.0 before 0.05 m, confirming a systematic failure mode under high crowd density. The original distance-based adjacency matrix encodes proximity but not urgency, and the NLL loss provides no incentive for the model to avoid physically impossible configurations.
 
-- **A\_moi / TTC-STGCNN (red dashed):** The TTC-weighted model distributes predicted minimum distances across a substantially wider range (0 - 1.4 m). At the 0.4 m collision threshold (orange dotted line), approximately 68% of the TTC model's hard-case scenes still produce at least one predicted pair below the safety margin â€” a reflection of the inherent ambiguity in very dense crowds where pedestrians must pass close to each other. Critically, the remaining 32% of scenes are pushed entirely to safe separations, and the CDF slope is sub-linear up to 0.4 m, indicating that the model has learned to selectively avoid the most extreme collision situations.
+- **A\_moi / TTC-STGCNN (red dashed):** The TTC-weighted model distributes predicted minimum distances across a substantially wider range (0 - 1.4 m). At the 0.4 m collision threshold (orange dotted line), approximately 68% of the TTC model's hard-case scenes still produce at least one predicted pair below the safety margin :” a reflection of the inherent ambiguity in very dense crowds where pedestrians must pass close to each other. Critically, the remaining 32% of scenes are pushed entirely to safe separations, and the CDF slope is sub-linear up to 0.4 m, indicating that the model has learned to selectively avoid the most extreme collision situations.
 
 - **Interpretation:** This result demonstrates that the TTC energy loss acts specifically in the high-risk tail of the interaction distribution. Rather than uniformly increasing all predicted separations (which would inflate ADE), the model learns to selectively increase predicted separation in the most collision-prone configurations while accepting proximity in high-density crossing scenarios where avoidance is geometrically constrained. This targeted behavior is the key property that allows TTC-STGCNN to reduce collision rates without sacrificing displacement accuracy.
 
