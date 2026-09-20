@@ -98,29 +98,31 @@ pip install torch torchvision numpy pandas matplotlib
 
 ```
 TTC_STGCNN/
-â”œâ”€â”€ model.py          # Social-STGCNN backbone (ConvTemporalGraphical, st_gcn, social_stgcnn)
-â”œâ”€â”€ utils.py          # Dataset loaders, TTC graph construction, TrajectoryDatasetHybrid
-â”œâ”€â”€ metrics.py        # ADE, FDE, COL-I, COL-II, TTC energy, CDF plotting utilities
-â”œâ”€â”€ train.py          # Training loop with hybrid loss, LR scheduling, checkpoint saving
-â”œâ”€â”€ test.py           # Evaluation pipeline (k=20 samples, best-of-k ADE/FDE)
-â””â”€â”€ __init__.py
+├── model.py          # Social-STGCNN backbone (ConvTemporalGraphical, st_gcn, social_stgcnn)
+├── utils.py          # Dataset loaders, TTC graph construction, TrajectoryDatasetHybrid
+├── metrics.py        # ADE, FDE, COL-I, COL-II, TTC energy, CDF plotting utilities
+├── train.py          # Training loop with hybrid loss, LR scheduling, checkpoint saving
+├── test.py           # Evaluation pipeline (k=20 samples, best-of-k ADE/FDE)
+└── __init__.py
+
 ```
 
 **Expected dataset layout** (ETH/UCY standard split):
 
 ```
 datasets_eth_hotels_/
-â”œâ”€â”€ eth/
-â”‚   â”œâ”€â”€ train/   # *.txt annotation files
-â”‚   â”œâ”€â”€ val/
-â”‚   â””â”€â”€ test/
-â”œâ”€â”€ hotel/
-â”‚   â”œâ”€â”€ train/
-â”‚   â”œâ”€â”€ val/
-â”‚   â””â”€â”€ test/
-â”œâ”€â”€ univ/
-â”œâ”€â”€ zara1/
-â””â”€â”€ zara2/
+├── eth/
+│   ├── train/   # *.txt annotation files
+│   ├── val/
+│   └── test/
+├── hotel/
+│   ├── train/
+│   ├── val/
+│   └── test/
+├── univ/
+├── zara1/
+└── zara2/
+
 ```
 
 Each `.txt` annotation file follows the format:
@@ -251,13 +253,13 @@ To assess safety under adversarial crowd conditions, we identify the **top 200 s
 
 The figure below shows this analysis for the **univ** dataset, which contains the densest crossing flows among all five splits and therefore represents the most challenging test for collision avoidance.
 
-![CDF of minimum predicted inter-agent distance in the top 200 hardest scenes â€” univ dataset](./assets/hard_cases_cdf_univ.png)
+![CDF of minimum predicted inter-agent distance in the top 200 hardest scenes at univ dataset](./assets/hard_cases_cdf_univ.png)
 
 **Observations:**
 
 - **A\_goc / Social-STGCNN (blue solid):** The original model concentrates nearly all of its minimum predicted distances at or below 0.02 m â€” effectively at zero â€” meaning that in virtually every hard-case scene, at least one pair of pedestrians is predicted to be physically overlapping. The CDF reaches 1.0 before 0.05 m, confirming a systematic failure mode under high crowd density. The original distance-based adjacency matrix encodes proximity but not urgency, and the NLL loss provides no incentive for the model to avoid physically impossible configurations.
 
-- **A\_moi / TTC-STGCNN (red dashed):** The TTC-weighted model distributes predicted minimum distances across a substantially wider range (0 â€“ 1.4 m). At the 0.4 m collision threshold (orange dotted line), approximately 68% of the TTC model's hard-case scenes still produce at least one predicted pair below the safety margin â€” a reflection of the inherent ambiguity in very dense crowds where pedestrians must pass close to each other. Critically, the remaining 32% of scenes are pushed entirely to safe separations, and the CDF slope is sub-linear up to 0.4 m, indicating that the model has learned to selectively avoid the most extreme collision situations.
+- **A\_moi / TTC-STGCNN (red dashed):** The TTC-weighted model distributes predicted minimum distances across a substantially wider range (0 - 1.4 m). At the 0.4 m collision threshold (orange dotted line), approximately 68% of the TTC model's hard-case scenes still produce at least one predicted pair below the safety margin â€” a reflection of the inherent ambiguity in very dense crowds where pedestrians must pass close to each other. Critically, the remaining 32% of scenes are pushed entirely to safe separations, and the CDF slope is sub-linear up to 0.4 m, indicating that the model has learned to selectively avoid the most extreme collision situations.
 
 - **Interpretation:** This result demonstrates that the TTC energy loss acts specifically in the high-risk tail of the interaction distribution. Rather than uniformly increasing all predicted separations (which would inflate ADE), the model learns to selectively increase predicted separation in the most collision-prone configurations while accepting proximity in high-density crossing scenarios where avoidance is geometrically constrained. This targeted behavior is the key property that allows TTC-STGCNN to reduce collision rates without sacrificing displacement accuracy.
 
@@ -276,7 +278,7 @@ If you find this work useful, please cite the original Social-STGCNN paper and t
 }
 
 @misc{ttcstgcnn2026,
-  author = {Nguyen Hoang Thanh},
+  author = {Dao Tat Thanh},
   title  = {TTC-STGCNN: Time-to-Collision Aware Social Spatio-Temporal Graph Convolutional Network},
   year   = {2026},
   url    = {https://github.com/<your-username>/TTC-STGCNN}
