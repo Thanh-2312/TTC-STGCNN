@@ -215,7 +215,7 @@ All metrics are reported under the leave-one-out protocol (k=20 samples, best-of
 | Univ    | 0.534   | 1.012   | 0.3833      | 0.00586     | 0.42878      | 29.017 |
 | Zara1   | 0.336   | 0.548   | 0.1034      | 0.01531     | 0.14958      | 5.389 |
 | Zara2   | 0.298   | 0.481   | 0.2570      | 0.01505     | 0.23676      | 21.266 |
-| **Avg** | **0.44**| **0.75**| â€”           | â€”           | â€”            | â€” |
+| **Avg** | **0.44**| **0.75**|
 
 **Social-STGCNN (Baseline, Mohamed et al. CVPR 2020):**
 
