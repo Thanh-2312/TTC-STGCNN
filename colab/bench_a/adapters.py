@@ -30,6 +30,10 @@ if os.environ.get('BENCH_VARIANT') == 'F':                               # B-ret
     import pedwise
     pedwise.apply()
 CKPT = os.environ.get('BENCH_CKPT') and os.path.join(os.environ['BENCH_CKPT'], '')  # B-retrain: a trained checkpoint dir
+EGO_MODE = os.environ.get('BENCH_EGO_MODE', '')                          # Universal wrapper: '', 'rad3', 'cone', 'inf'
+if EGO_MODE:
+    sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'universal')))
+    from wrap_utils import ego_indices  # noqa: E402
 
 SEED, KEYS, CALL = 0, [], [0]                                             # pinned noise: job seed, keys of the current batch
 NEEDS_PIN = {'PECNet', 'GraphTERN', 'Singular', 'Implicit'}
@@ -63,12 +67,38 @@ def gauss(V):
     return V[..., :2], cov
 
 
-def sgan_out(obs_traj, gt_traj, V, K):
+def _ego_seed(key_i):
+    return (SEED * 1000003 + (int(key_i) & 0xffffffff)) & 0x7fffffff
+
+
+def _iso_graph(stg_fn, obs_1, rel_1, *extra):
+    v2, a2 = stg_fn(torch.cat([obs_1, obs_1 + 1e12], 0), torch.cat([rel_1, rel_1 + 1e12], 0), *extra)
+    return v2[:, :1], a2[..., :1, :1]
+
+
+def _slice_info(d, it, n):
+    out = {}
+    for k, v in d.items():
+        if k == 'scene_mask' and torch.is_tensor(v):
+            out[k] = v[it][:, it]
+        elif torch.is_tensor(v) and v.dim() >= 1 and v.shape[0] == n and k != 'num_samples':
+            out[k] = v[it]
+        else:
+            out[k] = v
+    return out
+
+
+def sgan_out(obs_traj, gt_traj, V, K, pin=False):
     """obs_traj (1,N,2,8), gt_traj (1,N,2,12), V (12,N,5) relative steps -> absolute outputs."""
     obs, gt = obs_traj[0].permute(0, 2, 1), gt_traj[0].permute(0, 2, 1)
     last = obs[:, -1]
     mu, cov = gauss(V)
-    s = MultivariateNormal(mu, cov).sample((K,))                      # K,12,N,2
+    if pin:
+        L = torch.linalg.cholesky(cov)
+        Z = torch.stack([torch.from_numpy(r.standard_normal((K, 12, 2))).to(mu) for r in keyed()], 2)
+        s = mu + (L @ Z.unsqueeze(-1)).squeeze(-1)
+    else:
+        s = MultivariateNormal(mu, cov).sample((K,))                  # K,12,N,2
     return cpu(obs, gt, (s.cumsum(1) + last).permute(0, 2, 1, 3), (mu.cumsum(0) + last).permute(1, 0, 2))
 
 
@@ -84,15 +114,27 @@ def stgcnn(ds, root):
 
     def run(K, pin=False):
         for b in DataLoader(dset, batch_size=1):
-            b = [t.cuda() for t in b]
-            V, _ = net(b[6].permute(0, 3, 1, 2), b[7].squeeze())
-            yield sgan_out(b[0], b[1], V.permute(0, 2, 3, 1)[0], K)
+            if not EGO_MODE:
+                b = [t.cuda() for t in b]
+                V, _ = net(b[6].permute(0, 3, 1, 2), b[7].squeeze())
+                yield sgan_out(b[0], b[1], V.permute(0, 2, 3, 1)[0], K)
+                continue
+            obs_c, rel_c = b[0][0], b[2][0]
+            obs_w = obs_c.permute(0, 2, 1)
+            KEYS[:] = okeys(obs_w)
+            Vs = []
+            for idx in ego_indices(obs_w.numpy(), EGO_MODE):
+                v_s, a_s = (_iso_graph(utils.seq_to_graph, obs_c[idx], rel_c[idx], True) if len(idx) == 1
+                            else utils.seq_to_graph(obs_c[idx], rel_c[idx], True))
+                Vi, _ = net(v_s.unsqueeze(0).permute(0, 3, 1, 2).cuda(), a_s.cuda())
+                Vs.append(Vi.permute(0, 2, 3, 1)[0, :, 0])
+            yield sgan_out(b[0].cuda(), b[1].cuda(), torch.stack(Vs, 1), K, pin)
     return run
 
 
 def dmrgcn(ds, root):
     enter('DMRGCN')
-    from utils import TrajectoryDataset
+    from utils import TrajectoryDataset, seq_to_graph
     from model import social_dmrgcn
     d = CKPT or f'checkpoints/social-dmrgcn-{ds}-experiment_tp4_de80/'
     a = pickle.load(open(d + 'args.pkl', 'rb'))
@@ -103,9 +145,22 @@ def dmrgcn(ds, root):
 
     def run(K, pin=False):
         for b in DataLoader(dset, batch_size=1):
-            b = [t.cuda() for t in b]
-            V, _ = net(b[-4].permute(0, 3, 1, 2), b[-3])
-            yield sgan_out(b[0], b[1], V.permute(0, 2, 3, 1)[0], K)
+            if not EGO_MODE:
+                b = [t.cuda() for t in b]
+                V, _ = net(b[-4].permute(0, 3, 1, 2), b[-3])
+                yield sgan_out(b[0], b[1], V.permute(0, 2, 3, 1)[0], K)
+                continue
+            obs_c, rel_c = b[0][0], b[2][0]
+            obs_w = obs_c.permute(0, 2, 1)
+            KEYS[:] = okeys(obs_w)
+            Vs = []
+            for idx in ego_indices(obs_w.numpy(), EGO_MODE):
+                v_s, a_s = (_iso_graph(seq_to_graph, obs_c[idx], rel_c[idx]) if len(idx) == 1
+                            else seq_to_graph(obs_c[idx], rel_c[idx]))
+                a_in = a_s.unsqueeze(0).cuda() if b[-3].dim() == a_s.dim() + 1 else a_s.cuda()
+                Vi, _ = net(v_s.unsqueeze(0).permute(0, 3, 1, 2).cuda(), a_in)
+                Vs.append(Vi.permute(0, 2, 3, 1)[0, :, 0])
+            yield sgan_out(b[0].cuda(), b[1].cuda(), torch.stack(Vs, 1), K, pin)
     return run
 
 
@@ -146,11 +201,24 @@ def graphtern(ds, root):
         GM.MixtureSameFamily = KeyedMixture if pin else released
         for b in DataLoader(dset, batch_size=1):
             S_obs, S_trgt = [t.cuda() for t in b[-2:]]
-            KEYS[:], CALL[0] = okeys(S_obs[0, 0].permute(1, 0, 2)), 0
-            if pin:
-                random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED); torch.cuda.manual_seed_all(SEED)
-            _, _, V_refi, _ = net(S_obs, pruning=4, clustering=True)  # K,12,N,2 absolute
-            yield cpu(S_obs[0, 0].permute(1, 0, 2), S_trgt[0, 0].permute(1, 0, 2), V_refi.permute(0, 2, 1, 3), None)
+            obs_w, gt_w = S_obs[0, 0].permute(1, 0, 2), S_trgt[0, 0].permute(1, 0, 2)
+            if not EGO_MODE:
+                KEYS[:], CALL[0] = okeys(obs_w), 0
+                if pin:
+                    random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED); torch.cuda.manual_seed_all(SEED)
+                _, _, V_refi, _ = net(S_obs, pruning=4, clustering=True)  # K,12,N,2 absolute
+                yield cpu(obs_w, gt_w, V_refi.permute(0, 2, 1, 3), None)
+                continue
+            all_k = okeys(obs_w)
+            outs = []
+            for idx in ego_indices(obs_w.detach().cpu().numpy(), EGO_MODE):
+                KEYS[:], CALL[0] = [all_k[j] for j in idx], 0
+                if pin:
+                    si = _ego_seed(all_k[idx[0]])
+                    random.seed(si); np.random.seed(si); torch.manual_seed(si); torch.cuda.manual_seed_all(si)
+                _, _, Vr, _ = net(S_obs[:, :, :, idx, :], pruning=4, clustering=True)
+                outs.append(Vr[:, :, 0, :])
+            yield cpu(obs_w, gt_w, torch.stack(outs, 1), None)
     return run
 
 
@@ -170,11 +238,22 @@ def implicit(ds, root):
         for b in DataLoader(dset, batch_size=1):
             b = [t.cuda().double() for t in b]
             obs, gt = b[0][0].permute(0, 2, 1), b[1][0].permute(0, 2, 1)
-            if pin:
-                torch.manual_seed(SEED); torch.cuda.manual_seed_all(SEED)
-            V = net(b[6].permute(0, 3, 1, 2), b[0], KSTEPS=K)            # K,2,12,N relative steps
-            s = V.permute(0, 2, 3, 1).cumsum(1) + obs[:, -1]             # K,12,N,2
-            yield cpu(obs, gt, s.permute(0, 2, 1, 3), None)
+            if not EGO_MODE:
+                if pin:
+                    torch.manual_seed(SEED); torch.cuda.manual_seed_all(SEED)
+                V = net(b[6].permute(0, 3, 1, 2), b[0], KSTEPS=K)            # K,2,12,N relative steps
+                s = V.permute(0, 2, 3, 1).cumsum(1) + obs[:, -1]             # K,12,N,2
+                yield cpu(obs, gt, s.permute(0, 2, 1, 3), None)
+                continue
+            all_k = okeys(obs)
+            outs = []
+            for idx in ego_indices(obs.detach().cpu().numpy(), EGO_MODE):
+                if pin:
+                    si = _ego_seed(all_k[idx[0]])
+                    torch.manual_seed(si); torch.cuda.manual_seed_all(si)
+                Vi = net(b[6][:, :, idx, :].permute(0, 3, 1, 2), b[0][:, idx], KSTEPS=K)
+                outs.append(Vi[:, :, :, 0].permute(0, 2, 1).cumsum(1) + obs[idx[0], -1])
+            yield cpu(obs, gt, torch.stack(outs, 1), None)
     return run
 
 
@@ -190,9 +269,19 @@ def npsn_sgcn(ds, root):
         for b in loader:
             obs_traj, gt_traj = b[0].cuda(), b[1].cuda()
             V_obs = b[-2].cuda()
-            V = net(V_obs, get_sgcn_identity(V_obs.shape)).squeeze(0)   # 12,N,5
-            assert V.shape[-1] == 5 and V.shape[0] == 12, V.shape
-            yield sgan_out(obs_traj, gt_traj, V, K)
+            if not EGO_MODE:
+                V = net(V_obs, get_sgcn_identity(V_obs.shape)).squeeze(0)   # 12,N,5
+                assert V.shape[-1] == 5 and V.shape[0] == 12, V.shape
+                yield sgan_out(obs_traj, gt_traj, V, K)
+                continue
+            obs_w = obs_traj[0].permute(0, 2, 1)
+            KEYS[:] = okeys(obs_w)
+            Vs = []
+            for idx in ego_indices(obs_w.detach().cpu().numpy(), EGO_MODE):
+                vs = V_obs[:, :, idx, :]
+                Vi = net(vs, get_sgcn_identity(vs.shape)).squeeze(0)
+                Vs.append(Vi if Vi.dim() == 2 else Vi[:, 0])
+            yield sgan_out(obs_traj, gt_traj, torch.stack(Vs, 1), K, pin)
     return run
 
 
@@ -208,15 +297,32 @@ def npsn_pecnet(ds, root):
         for b in loader:
             obs_traj, gt_traj, mask, x, _, init, scale = model_forward_pre_hook(b)
             obs, gt = obs_traj.permute(0, 2, 1), gt_traj.permute(0, 2, 1)
-            if pin:                                                       # latent z = noise * sigma, per pedestrian
-                KEYS[:] = okeys(obs)
-                Z = torch.from_numpy(np.stack([r.standard_normal((K, net.zdim)) for r in keyed()], 1)).float().cuda()
-            out = []
-            for k in range(K):
-                dest = net.forward(x, init, device=dev, noise=Z[k] if pin else None)
-                fut = net.predict(x, dest, mask, init)
-                out.append(torch.cat([fut, dest], 1).view(-1, 12, 2) / scale + obs[:, :1])
-            yield cpu(obs, gt, torch.stack(out), None)
+            if not EGO_MODE:
+                if pin:                                                       # latent z = noise * sigma, per pedestrian
+                    KEYS[:] = okeys(obs)
+                    Z = torch.from_numpy(np.stack([r.standard_normal((K, net.zdim)) for r in keyed()], 1)).float().cuda()
+                out = []
+                for k in range(K):
+                    dest = net.forward(x, init, device=dev, noise=Z[k] if pin else None)
+                    fut = net.predict(x, dest, mask, init)
+                    out.append(torch.cat([fut, dest], 1).view(-1, 12, 2) / scale + obs[:, :1])
+                yield cpu(obs, gt, torch.stack(out), None)
+                continue
+            all_k = okeys(obs)
+            outs = []
+            for idx in ego_indices(obs.detach().cpu().numpy(), EGO_MODE):
+                it = torch.as_tensor(idx, dtype=torch.long, device=x.device)
+                sm = torch.ones((len(idx), len(idx)), dtype=mask.dtype, device=mask.device)
+                if pin:
+                    KEYS[:] = [all_k[j] for j in idx]
+                    Z = torch.from_numpy(np.stack([r.standard_normal((K, net.zdim)) for r in keyed()], 1)).float().cuda()
+                ek = []
+                for k in range(K):
+                    dest = net.forward(x[it], init[it], device=dev, noise=Z[k] if pin else None)
+                    fut = net.predict(x[it], dest, sm, init[it])
+                    ek.append(torch.cat([fut[:1], dest[:1]], 1).view(12, 2) / scale + obs[idx[0], :1])
+                outs.append(torch.stack(ek))
+            yield cpu(obs, gt, torch.stack(outs, 1), None)
     return run
 
 
@@ -269,8 +375,20 @@ def eigen_family(repo, cfg, tag, root):
 
     def forward(obs, *a, **k):
         cap.append(obs)
-        KEYS[:] = okeys(obs)
-        return fwd(obs, *a, **k)
+        all_k = okeys(obs)
+        if not EGO_MODE:
+            KEYS[:] = all_k
+            return fwd(obs, *a, **k)
+        n = len(obs)
+        outs = []
+        for idx in ego_indices(obs.detach().cpu().numpy(), EGO_MODE):
+            KEYS[:] = [all_k[j] for j in idx]
+            it = torch.as_tensor(idx, dtype=torch.long, device=obs.device)
+            sa = [x[it] if torch.is_tensor(x) else _slice_info(x, it, n) if isinstance(x, dict) else x for x in a]
+            sk = {key: (_slice_info(val, it, n) if isinstance(val, dict) else val[it] if torch.is_tensor(val) else val)
+                  for key, val in k.items()}
+            outs.append(fwd(obs[it], *sa, **sk)['recon_traj'][:, 0])
+        return {'recon_traj': torch.stack(outs, dim=1)}
     tr.model.forward = forward
     diff = sys.modules.get('baseline.transformerdiffusion.model')        # SingularTrajectory's sampler module
     released_np = diff.np if diff else None
@@ -327,12 +445,16 @@ def eqmotion(ds, root):
         loc, loc_end = np.array(torch.stack(data['pre_motion_3D'])), np.array(torch.stack(data['fut_motion_3D']))
         n = loc.shape[0]
         sizes.append(n)
+        cone_lists = ego_indices(loc, EGO_MODE) if EGO_MODE else None
         for i in range(n):
-            dist = np.linalg.norm(loc[:, -1] - loc[i:i + 1, -1], axis=-1)
-            if n < total_num:                                             # ego first, then the others in file order
-                idx = [i] + [j for j in range(n) if j != i]
-            else:                                                         # nearest within 5 m, ego first
-                idx = np.argsort(dist)[:min(int((dist < 5).sum()), total_num)]
+            if EGO_MODE:
+                idx = cone_lists[i][:total_num]
+            else:
+                dist = np.linalg.norm(loc[:, -1] - loc[i:i + 1, -1], axis=-1)
+                if n < total_num:                                         # ego first, then the others in file order
+                    idx = [i] + [j for j in range(n) if j != i]
+                else:                                                     # nearest within 5 m, ego first
+                    idx = np.argsort(dist)[:min(int((dist < 5).sum()), total_num)]
             p, f = np.zeros((total_num, 8, 2)), np.zeros((total_num, 12, 2))
             p[:len(idx)], f[:len(idx)] = loc[idx], loc_end[idx]
             past.append(p); fut.append(f); nums.append(len(idx))
