@@ -50,3 +50,27 @@ ENV/
 
 # Logs
 *.log
+
+# research
+data/cache/
+runs/
+kaggle/kernels/
+kaggle/out/
+paper/*.aux
+paper/*.log
+paper/*.blg
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.out
+paper/*.spl
+paper/build.log
+paper/pass3.log
+kaggle/diag/
+kaggle/pending_push/
+
+# Colab bundles (data copies) and downloaded Colab results
+colab/bundle/
+kaggle/colab_in/
+
+# public release folder (its own git repository)
+order-invariance-audit/
