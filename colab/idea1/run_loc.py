@@ -162,6 +162,18 @@ def model_specs():
 def main():
     os.makedirs(WORK, exist_ok=True)
     specs = model_specs()
+    sched_p = os.path.join(WORK, 'schedule.json')
+    if os.path.exists(sched_p):
+        sc = json.load(open(sched_p))
+        if all(d in sc and sc[d]['n_colors'] == min(MAX_COLORS, sc[d]['n_colors']) for d in DATASETS):
+            rem = [1 for d in DATASETS for m, *_ in specs for c in sc[d]['conds']
+                   if not os.path.exists(os.path.join(OUT, m, d, c + '.json'))]
+            if not rem:
+                log('all GPU jobs already saved on Drive (remaining: 0) -> running fast analyzer directly!')
+                ref_json = os.path.join(ROOT, 'data', 'idea1_locality', 'fast_stgcnn_ref.json')
+                subprocess.run([sys.executable, os.path.join(HERE, 'analyze_loc.py'), OUT,
+                                os.path.join(WORK, 'results'), '--ref', ref_json], check=False)
+                return
     A.setup()
     repos = sorted({MODELS[base][0] for _, base, _, _ in specs} | {'Social-STGCNN'})
     conds_by_ds = build_colored_sets(repos)

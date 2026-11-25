@@ -121,14 +121,12 @@ def analyze_cell(cell_dir):
             v_rem = v_all[keep][ord_b]
             dv = np.linalg.norm(v_rem - v_all[j][None], axis=-1).mean(axis=-1)
 
-            # Neighbor distance rank of removed j for each remaining i at last observed step
+            # Neighbor distance rank of removed j for each remaining i at last observed step (vectorized)
             all_last = obs_b[:, -1]                              # (N, 2)
-            rk = []
-            for idx_orig in np.array(keep)[ord_b]:
-                dists_i = np.linalg.norm(all_last - all_last[idx_orig], axis=-1)
-                dists_i[idx_orig] = -1.0
-                rk.append(int((dists_i < dists_i[j]).sum()))     # 1 = nearest neighbor, 2 = 2nd nearest, ...
-            rk = np.array(rk, dtype=np.int32)
+            idx_orig = np.asarray(keep, dtype=np.intp)[ord_b]    # (N-1,)
+            d_mat = np.linalg.norm(all_last[idx_orig, None] - all_last[None], axis=-1)
+            d_mat[np.arange(len(idx_orig)), idx_orig] = -1.0
+            rk = (d_mat < d_last[:, None]).sum(axis=-1).astype(np.int32)
 
             ch_end.append(np.linalg.norm(ps[:, -1] - pb[:, -1], axis=-1))
             ch_ade.append(np.linalg.norm(ps - pb, axis=-1).mean(axis=-1))
@@ -249,6 +247,7 @@ def run_analysis(out_dir, res_prefix, ref_path=None):
         c = analyze_cell(d)
         if c:
             cells.setdefault(m, {})[ds] = c
+            print(f"  [analyze] {m:18s} {ds:6s} -> {c['n_pairs']:6d} pairs", flush=True)
 
     if ref_path and os.path.exists(ref_path):
         ref = json.load(open(ref_path))
