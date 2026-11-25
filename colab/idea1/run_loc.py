@@ -77,25 +77,29 @@ def color_file_tracks(path, max_colors):
 
 
 def drop_tracks_in_file(path, drop_ids):
-    """Remove rows with track ID in drop_ids while preserving every frame in np.unique(frames)."""
+    """Remove rows with track ID in drop_ids while preserving every frame in np.unique(frames).
+    If a solo frame would become empty, insert a unique 1-frame dummy track ID (900001+) so no track ever has a gap."""
     if not drop_ids:
         return
     lines = [l for l in open(path, encoding='utf-8').read().splitlines() if l.strip()]
     delim = '\t' if '\t' in lines[0] else ' '
-    parsed = [(float((l.strip().split(delim) if delim == '\t' else l.split())[0]),
-               int(float((l.strip().split(delim) if delim == '\t' else l.split())[1])), l) for l in lines]
     by_frame, order = {}, []
-    for f, pid, raw in parsed:
+    for l in lines:
+        parts = l.strip().split(delim) if delim == '\t' else l.split()
+        f, pid = float(parts[0]), int(float(parts[1]))
         if f not in by_frame:
             by_frame[f] = []
             order.append(f)
-        by_frame[f].append((pid, raw))
-    out_lines = []
+        by_frame[f].append((pid, parts, l))
+    out_lines, dummy_id = [], 900001
     for f in order:
         frows = by_frame[f]
-        kept = [raw for pid, raw in frows if pid not in drop_ids]
-        if not kept:  # solo frame outside any N>=2 window: keep 1 row so frame count never shifts
-            kept = [frows[0][1]]
+        kept = [raw for pid, _, raw in frows if pid not in drop_ids]
+        if not kept:  # solo frame outside any N>=2 window: 1-frame unique ID so pad_end-pad_front == 1 != 20
+            parts = list(frows[0][1])
+            parts[1] = f'{dummy_id}.0'
+            dummy_id += 1
+            kept = [delim.join(parts)]
         out_lines.extend(kept)
     with open(path, 'w', encoding='utf-8') as fout:
         fout.write('\n'.join(out_lines) + '\n')
@@ -122,7 +126,7 @@ def build_colored_sets(repos):
         for c in range(max_c):
             cond = f'c{c}'
             dst = loc_root(repo, cond)
-            if os.path.exists(dst + '.done'):
+            if os.path.exists(dst + '.v2.done'):
                 continue
             shutil.rmtree(dst, ignore_errors=True)
             shutil.copytree(loc_root(repo, 'id'), dst)
@@ -133,7 +137,7 @@ def build_colored_sets(repos):
                     csets = per_file.get(stem, [])
                     if c < len(csets):
                         drop_tracks_in_file(f, csets[c])
-            open(dst + '.done', 'w').close()
+            open(dst + '.v2.done', 'w').close()
     conds_by_ds = {ds: ['id', 'idrep'] + [f'c{c}' for c in range(schedule[ds][0])] for ds in DATASETS}
     json.dump({ds: dict(n_colors=schedule[ds][0], conds=conds_by_ds[ds]) for ds in DATASETS},
               open(os.path.join(WORK, 'schedule.json'), 'w'), indent=1)

@@ -344,6 +344,14 @@ def selftest():
                 drop_tracks_in_file(tf, cset)
                 prows = np.array([[float(x) for x in l.split()] for l in open(tf).read().splitlines() if l.strip()])
                 assert sorted(np.unique(prows[:, 0]).tolist()) == orig_frames, f'Frame dropped in {ds}!'
+                # Verify upstream TrajectoryDataset invariant: no gapped track with pad_end - pad_front == 20 and len < 20
+                pfd = [prows[prows[:, 0] == fr] for fr in orig_frames]
+                for idx in range(len(orig_frames) - 19):
+                    seq = np.concatenate(pfd[idx:idx + 20], 0)
+                    for pid in np.unique(seq[:, 1]):
+                        c_ = seq[seq[:, 1] == pid]
+                        if fidx[c_[-1, 0]] - fidx[c_[0, 0]] + 1 == 20:
+                            assert len(c_) == 20, f'Gapped track {pid} in {ds}: span=20 but rows={len(c_)}!'
 
         # Verify synthetic cell analysis end-to-end (synthetic non-local model vs exact 3m local model)
         out_mock = os.path.join(tmp, 'out')
