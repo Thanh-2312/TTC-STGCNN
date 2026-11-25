@@ -134,7 +134,7 @@ def stgcnn(ds, root):
 
 def dmrgcn(ds, root):
     enter('DMRGCN')
-    from utils import TrajectoryDataset, seq_to_graph
+    from utils.dataloader import TrajectoryDataset, seq_to_graph
     from model import social_dmrgcn
     d = CKPT or f'checkpoints/social-dmrgcn-{ds}-experiment_tp4_de80/'
     a = pickle.load(open(d + 'args.pkl', 'rb'))
@@ -155,8 +155,7 @@ def dmrgcn(ds, root):
             KEYS[:] = okeys(obs_w)
             Vs = []
             for idx in ego_indices(obs_w.numpy(), EGO_MODE):
-                v_s, a_s = (_iso_graph(seq_to_graph, obs_c[idx], rel_c[idx]) if len(idx) == 1
-                            else seq_to_graph(obs_c[idx], rel_c[idx]))
+                v_s, a_s = seq_to_graph(obs_c[idx], rel_c[idx])
                 a_in = a_s.unsqueeze(0).cuda() if b[-3].dim() == a_s.dim() + 1 else a_s.cuda()
                 Vi, _ = net(v_s.unsqueeze(0).permute(0, 3, 1, 2).cuda(), a_in)
                 Vs.append(Vi.permute(0, 2, 3, 1)[0, :, 0])
@@ -263,6 +262,12 @@ def npsn_sgcn(ds, root):
     from baselines.converter import get_sgcn_identity
     net = get_model().cuda()
     net.load_state_dict(torch.load(f'pretrained/sgcn/{ds}/val_best.pth')); net.eval()
+    # Preserve N=1 axis inside SGCN when an ego causal cone has a single pedestrian
+    sw = net.sparse_weighted_adjacency_matrices
+    sw_fwd = sw.forward
+    sw.forward = lambda g, ident: sw_fwd(g.unsqueeze(1) if g.dim() == 2 else g, ident)
+    sf = sw.spa_fusion
+    sf.forward = lambda x: sf.conv(x) + sf.shortcut(x)
     loader, _ = get_dataloader(f'{root}/{ds}/', 'test', 8, 12, 1)
 
     def run(K, pin=False):
